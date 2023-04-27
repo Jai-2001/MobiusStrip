@@ -12,6 +12,8 @@ public class NetworkedPlayer : ControlledCharacter
     private Player? _remote;
     private Player? _local;
     private Vector3 _lastPos;
+    
+
     public NetworkedPlayer(Player player, PlayerAI golem, bool controllingGolem) : base(player, golem, controllingGolem)
     {
         _lastPos = Vector3.zero;
@@ -60,7 +62,7 @@ public class NetworkedPlayer : ControlledCharacter
             }
             if (_remote != null && _connection.MessageReceived())
             {
-                Vector3 pos = _connection.ReceiveMessage(QuerySwapAccepted());
+                Vector3 pos = _connection.ReceiveMessage();
                 var transform = _remote.touchObj.transform;
                 transform.position = pos;
                 _remote.MoveTo(transform);

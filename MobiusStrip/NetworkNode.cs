@@ -1,6 +1,10 @@
 ﻿using System;
+using System.Linq;
 using System.Net.Sockets;
+using System.Text;
 using UnityEngine;
+using Object = UnityEngine.Object;
+
 
 namespace MobiusStrip;
 
@@ -8,24 +12,19 @@ public abstract class NetworkNode
 {
     protected NetworkStream? MovementStream;
     protected TcpClient? _client;
-    protected byte[] sendBuf;
-    protected byte[] recvBuf;
+    protected string sendBuf;
+    protected string recvBuf;
+    private MovingBox? currentBox;
     protected int LastRead;
     protected IAsyncResult? LastWrite;
-    private byte _swapState;
-    //0 is none,
-    //1 is send request,
-    //2 is send granted,
-    //3 is received granted,
-    //4 is received declined
-    private bool accepted;
-    private bool granted;
+    private bool requestSwap;
+    private bool swapGranted;
     protected NetworkNode(string ip, int port)
     {
-        sendBuf = new byte[13];
-        recvBuf = new byte[13];
+        sendBuf = "";
+        recvBuf = "";
         LastRead = 0;
-        _swapState = 0;
+        //_swapState = 0;
     }
 
     public bool Paired()
@@ -37,69 +36,59 @@ public abstract class NetworkNode
 
     public bool MessageReceived()
     {
-        return _client is { Available: >= 13 };
+        if (_client != null)
+        {
+            if (_client.Available > 0)
+            {
+                byte[] buf = new byte[_client.Available];
+                LastRead += MovementStream.Read(buf, 0, buf.Length);
+                recvBuf += Encoding.UTF8.GetString(buf);
+            }
+
+            return recvBuf.Contains("{") && recvBuf.Contains("}");
+        }
+
+        return false;
     }
 
-    public void SendMessage(Vector3 position, bool requestSwap)
+    public void SendMessage(Vector3 position, bool requestSwap, string boxName = "")
     {
+        requestSwap = true;
         if (Paired())
         {
-            if (requestSwap) _swapState = 1;
             if (LastWrite != null)
             {
                 MovementStream.EndWrite(LastWrite);
                 LastWrite = null;
             }
-            Buffer.BlockCopy(BitConverter.GetBytes(position.x), 0, sendBuf, 0, 4);
-            Buffer.BlockCopy(BitConverter.GetBytes(position.y), 0, sendBuf, 4, 4);
-            Buffer.BlockCopy(BitConverter.GetBytes(position.z), 0, sendBuf, 8, 4);
 
-            sendBuf[12] = _swapState;
-            LastWrite = MovementStream.BeginWrite(sendBuf, 0, 13, null, null);
+            sendBuf = $"{{{position.x} {position.y} {position.z} {requestSwap} {boxName}}}" ;
+
+            byte[] buf = Encoding.UTF8.GetBytes(sendBuf);
+            LastWrite = MovementStream.BeginWrite(buf, 0, sendBuf.Length, null, null);
         }
 
     }
 
-    public Vector3 ReceiveMessage(bool acceptSwap)
+    public Vector3 ReceiveMessage()
     {
         Vector3 position = Vector3.zero;
         if (MessageReceived())
         {
-            LastRead += MovementStream.Read(recvBuf, LastRead, 13 - LastRead);
-            if (LastRead == 13)
-            {
-                LastRead = 0;
-                float x = BitConverter.ToSingle(recvBuf, 0);
-                float y = BitConverter.ToSingle(recvBuf, 4);
-                float z = BitConverter.ToSingle(recvBuf, 8);
-                position = new Vector3(x, y, z);
-                resolveSwapState(recvBuf[12]);
-            }
+            string next = recvBuf.Substring(recvBuf.IndexOf("{", StringComparison.Ordinal)+1, 
+                recvBuf.IndexOf("}", StringComparison.Ordinal)-1);
+            ModMain.Log(next);
+            string[] parts = next.Split(" ".ToCharArray());
+            position = new Vector3(float.Parse(parts[0]), float.Parse(parts[1]), float.Parse(parts[2]));
+            swapGranted = requestSwap & bool.Parse(parts[3]);
+            recvBuf = "";
         }
         return position;
     }
-
-    //0 means do nothing,
-    //1 means send 2 to accept,
-    //2 means perform swap if local and recieved are 2
-    //3 means clear state
-
-    private void resolveSwapState(byte recievedState)
-    {
-        switch (recievedState)
-        {
-            case 3: accepted = false;
-                _swapState = 0;
-                break;
-            case 2: accepted = _swapState == 2;
-                break;
-            case 1: _swapState = (byte)(granted ? 2 : 3);
-                break;
-        }
-    }
+    
 
     public bool CheckSwapGranted()
     {
-        return accepted;
+        return swapGranted;
     }
 }
