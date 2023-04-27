@@ -14,6 +14,8 @@ public abstract class NetworkNode
     protected TcpClient? _client;
     protected string sendBuf;
     protected string recvBuf;
+    protected Vector3 recievedPos;
+    protected Vector3 boxPosition;
     private MovingBox? currentBox;
     protected int LastRead;
     protected IAsyncResult? LastWrite;
@@ -24,6 +26,7 @@ public abstract class NetworkNode
         sendBuf = "";
         recvBuf = "";
         LastRead = 0;
+        boxPosition = Vector3.zero;
         //_swapState = 0;
     }
 
@@ -51,9 +54,9 @@ public abstract class NetworkNode
         return false;
     }
 
-    public void SendMessage(Vector3 position, bool requestSwap, string boxName = "")
+    public void SendMessage(Vector3 pos, bool requestSwap, string boxName, Vector3 boxPos)
     {
-        requestSwap = true;
+        requestSwap = this.requestSwap;
         if (Paired())
         {
             if (LastWrite != null)
@@ -62,15 +65,14 @@ public abstract class NetworkNode
                 LastWrite = null;
             }
 
-            sendBuf = $"{{{position.x} {position.y} {position.z} {requestSwap} {boxName}}}" ;
-
+            sendBuf = $"{{{pos.x}|{pos.y}|{pos.z}|{requestSwap}|{boxName}|{boxPos.x}|{boxPos.y}|{boxPos.z}}}";
             byte[] buf = Encoding.UTF8.GetBytes(sendBuf);
             LastWrite = MovementStream.BeginWrite(buf, 0, sendBuf.Length, null, null);
         }
 
     }
 
-    public Vector3 ReceiveMessage()
+    public void ReceiveMessage()
     {
         Vector3 position = Vector3.zero;
         if (MessageReceived())
@@ -78,14 +80,43 @@ public abstract class NetworkNode
             string next = recvBuf.Substring(recvBuf.IndexOf("{", StringComparison.Ordinal)+1, 
                 recvBuf.IndexOf("}", StringComparison.Ordinal)-1);
             ModMain.Log(next);
-            string[] parts = next.Split(" ".ToCharArray());
-            position = new Vector3(float.Parse(parts[0]), float.Parse(parts[1]), float.Parse(parts[2]));
+            string[] parts = next.Split('|');
+            position = GetVectorFromStrings(parts[0], parts[1], parts[2]);
+            if (parts[4].Contains("/"))
+            {
+                currentBox = GameObject.Find(parts[4]).GetComponent<MovingBox>();
+                boxPosition = GetVectorFromStrings(parts[5], parts[6], parts[7]);
+            }
+            else
+            {
+                currentBox = null;
+                boxPosition = Vector3.zero;
+            }
             swapGranted = requestSwap & bool.Parse(parts[3]);
             recvBuf = "";
         }
-        return position;
+        recievedPos = position;
+    }
+
+    public static Vector3 GetVectorFromStrings(string x, string y, string z)
+    {
+       return new Vector3(float.Parse(x), float.Parse(y), float.Parse(z));
     }
     
+    public Vector3 GetReceivedPosition()
+    {
+        return recievedPos;
+    }
+    
+    public MovingBox? GetMovingBox()
+    {
+        return currentBox;
+    }
+    public Vector3 GetBoxPosition()
+    {
+        return boxPosition;
+    }
+
 
     public bool CheckSwapGranted()
     {

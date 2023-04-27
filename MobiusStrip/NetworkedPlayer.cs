@@ -54,22 +54,50 @@ public class NetworkedPlayer : ControlledCharacter
             if (_local != null)
             {
                 var moveDestination = _local.myAgent.destination;
-                if (moveDestination != _lastPos)
+                if (moveDestination != _lastPos || _local.boxTouched)
                 {
                     _lastPos = moveDestination;
-                    _connection.SendMessage(moveDestination, _requestSwap);
+                    string boxName = "";
+                    Vector3 boxPosition = Vector3.zero;
+                    MovingBox? box = _local.movingBox;
+                    if (box != null && !_local.CantMoveBox())
+                    {
+                        Transform? toLabel = box.transform;
+                        boxPosition = toLabel.position;
+                        while (toLabel != null)
+                        {
+                            boxName = toLabel.name + "/" + boxName;
+                            toLabel = toLabel.parent;
+                        }
+                        Status += "\nsending box " + boxName + $"({boxPosition})\n";
+                    }
+                    _connection.SendMessage(moveDestination, _requestSwap, boxName, boxPosition);
                 }
             }
             if (_remote != null && _connection.MessageReceived())
             {
-                Vector3 pos = _connection.ReceiveMessage();
+                _connection.ReceiveMessage();
+                Vector3 pos = _connection.GetReceivedPosition();
+                MovingBox? box = _connection.GetMovingBox();
                 var transform = _remote.touchObj.transform;
                 transform.position = pos;
                 _remote.MoveTo(transform);
+                if (box != null)
+                {
+                    if ( _remote.movingBox!= box) _remote.movingBox = box;
+                    _remote.MovingBoxAndPushing();
+                    PushBoxGhost(_remote, _connection.GetBoxPosition());
+                }
+                else if(_remote.movingBox!= null)
+                {
+                    PushBoxGhost(_remote, _connection.GetBoxPosition());
+                    _remote.ResetPushing();
+                    _remote.movingBox = null;
+                }
                 Status += ($"[{_label}] Warping {_remote.name} to {pos.ToString()}");
             }
         }
-        Ghost.eState = EntityState.Pushing;
+        //Ghost.eState = EntityState.Pushing;
         base.Update(_connection != null && _connection.Paired());
     }
 
@@ -87,6 +115,11 @@ public class NetworkedPlayer : ControlledCharacter
         }
     }
 
+    private void PushBoxGhost(Player remote, Vector3 destination)
+    {
+        remote.UpdatePushingPosition();
+        if(destination!= Vector3.zero) remote.movingBox.transform.parent.position = destination;
+    }
     protected virtual bool QuerySwapAccepted()
     {
         return GolemIsBusy();
