@@ -78,19 +78,21 @@ public class NetworkedPlayer : ControlledCharacter
             {
                 _connection.ReceiveMessage();
                 Vector3 pos = _connection.GetReceivedPosition();
-                MovingBox? box = _connection.GetMovingBox();
                 var transform = _remote.touchObj.transform;
                 transform.position = pos;
                 _remote.MoveTo(transform);
+                MovingBox? box = _connection.GetMovingBox();
                 if (box != null)
                 {
-                    if ( _remote.movingBox!= box) _remote.movingBox = box;
-                    _remote.MovingBoxAndPushing();
-                    PushBoxGhost(_remote, _connection.GetBoxPosition());
+                    if (_remote.movingBox != box)
+                    {
+                        _remote.movingBox = box;
+                    }
+                    PushBoxGhost(_connection.GetBoxPosition());
                 }
                 else if(_remote.movingBox!= null)
                 {
-                    PushBoxGhost(_remote, _connection.GetBoxPosition());
+                    PushBoxGhost(_connection.GetBoxPosition());
                     _remote.ResetPushing();
                     _remote.movingBox = null;
                 }
@@ -115,10 +117,11 @@ public class NetworkedPlayer : ControlledCharacter
         }
     }
 
-    private void PushBoxGhost(Player remote, Vector3 destination)
+    private void PushBoxGhost(Vector3 destination)
     {
-        remote.UpdatePushingPosition();
-        if(destination!= Vector3.zero) remote.movingBox.transform.parent.position = destination;
+        _remote.MovingBoxAndPushing();
+        _remote.UpdatePushingPosition();
+        if(destination!= Vector3.zero) _remote.movingBox.transform.parent.position = destination;
     }
     protected virtual bool QuerySwapAccepted()
     {
